@@ -12,3 +12,4 @@ langchain-openai>=0.0.5
 langchain-text-splitters>=0.0.1
 redis>=5.0.1
 tiktoken>=0.6.0
+langchain-core

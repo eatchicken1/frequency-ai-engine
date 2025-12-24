@@ -18,8 +18,8 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379/0"
 
     # AI 模型配置
-    OPENAI_API_KEY: str = ""
-    OPENAI_API_BASE: str = ""
+    OPENAI_API_KEY: str = "sk-a7aa6ef6ca5d4010a23cbfafb48a2978"
+    OPENAI_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
     class Config:
         # 指定配置文件路径
