@@ -83,9 +83,6 @@ class FrequencyDashScopeEmbeddings(Embeddings):
 # ==============================================================================
 class KnowledgeEngine:
     def __init__(self):
-        # ⚠️ 注意：uvicorn --reload 下这里会执行两次
-        check_redis_vector_support(settings.REDIS_URL)
-
         self.embeddings = FrequencyDashScopeEmbeddings(
             api_key=settings.OPENAI_API_KEY
         )
@@ -96,6 +93,20 @@ class KnowledgeEngine:
             separators=["\n\n", "\n", "。", "！", "？", " ", ""],
         )
 
+        self.vector_store = None
+        self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+    def _content_hash(self, content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def _dedupe_key(self, echo_id: str, content_hash: str) -> str:
+        return f"{DEDUPE_PREFIX}:{echo_id}:{content_hash}"
+
+    def _ensure_vector_store(self) -> None:
+        if self.vector_store is not None:
+            return
+        # ⚠️ 注意：uvicorn --reload 下这里会执行两次
+        check_redis_vector_support(settings.REDIS_URL)
         # ✅ 关键修复点：embeddings（复数）
         self.vector_store = RedisVectorStore(
             redis_url=settings.REDIS_URL,
@@ -162,6 +173,7 @@ class KnowledgeEngine:
     # --------------------------------------------------------------------------
     async def search(self, query: str, echo_id: str, k: int = 3):
         try:
+            self._ensure_vector_store()
             # [关键] Redis Stack 过滤语法：只检索当前 Echo 的记忆
             filter_expr = f'@echo_id:{{{echo_id}}}'
 
