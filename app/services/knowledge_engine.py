@@ -114,6 +114,13 @@ class KnowledgeEngine:
             embeddings=self.embeddings,
             key_prefix=KEY_PREFIX,
         )
+        self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+    def _content_hash(self, content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def _dedupe_key(self, echo_id: str, content_hash: str) -> str:
+        return f"{DEDUPE_PREFIX}:{echo_id}:{content_hash}"
 
     # --------------------------------------------------------------------------
     async def ingest(
@@ -122,8 +129,6 @@ class KnowledgeEngine:
         content = request.content.strip()
         if not content:
             raise ValueError("content must not be blank")
-
-        self._ensure_vector_store()
 
         content_hash = self._content_hash(content)
         dedupe_key = self._dedupe_key(request.echo_id, content_hash)

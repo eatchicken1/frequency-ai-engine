@@ -85,8 +85,6 @@ async def ingest_knowledge_endpoint(request: KnowledgeIngestRequest):
         return await knowledge_engine.ingest(request)
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc))
-    except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
 
