@@ -13,4 +13,5 @@ langchain-text-splitters>=0.0.1
 redis>=5.0.1
 tiktoken>=0.6.0
 dashscope>=1.14.0
+langchain-redis
 langchain-core
