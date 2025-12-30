@@ -81,7 +81,12 @@ async def ingest_knowledge_endpoint(request: KnowledgeIngestRequest):
     """
     接收数字分身的记忆切片，并存入 Redis 向量数据库
     """
-    return await knowledge_engine.ingest(request)
+    try:
+        return await knowledge_engine.ingest(request)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    except Exception as exc:
+        raise HTTPException(status_code=500, detail=str(exc))
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=True)

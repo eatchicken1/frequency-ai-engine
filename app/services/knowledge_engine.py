@@ -1,8 +1,11 @@
 import dashscope
+import hashlib
+import logging
 import redis
 from http import HTTPStatus
 from typing import List
 
+import anyio
 from langchain_core.embeddings import Embeddings
 from langchain_redis import RedisVectorStore
 from langchain_text_splitters import RecursiveCharacterTextSplitter
@@ -18,6 +21,10 @@ from app.schemas.knowledge import (
 # ==============================================================================
 INDEX_NAME = "frequency_knowledge_idx"
 KEY_PREFIX = "frequency:doc"
+DEDUPE_PREFIX = "frequency:ingest:dedupe"
+DEDUPE_TTL_SECONDS = 60 * 60 * 24 * 7
+
+logger = logging.getLogger(__name__)
 
 
 # ==============================================================================
@@ -96,45 +103,61 @@ class KnowledgeEngine:
             embeddings=self.embeddings,
             key_prefix=KEY_PREFIX,
         )
+        self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+
+    def _content_hash(self, content: str) -> str:
+        return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+    def _dedupe_key(self, echo_id: str, content_hash: str) -> str:
+        return f"{DEDUPE_PREFIX}:{echo_id}:{content_hash}"
 
     # --------------------------------------------------------------------------
     async def ingest(
         self, request: KnowledgeIngestRequest
     ) -> KnowledgeIngestResponse:
-        try:
-            documents = self.text_splitter.create_documents(
-                texts=[request.content],
-                metadatas=[
-                    {
-                        "user_id": request.user_id,
-                        "echo_id": request.echo_id,
-                        "source": request.source_name,
-                        **(request.metadata or {}),
-                    }
-                ],
-            )
+        content = request.content.strip()
+        if not content:
+            raise ValueError("content must not be blank")
 
-            if not documents:
-                return KnowledgeIngestResponse(
-                    status="warning",
-                    chunks_count=0,
-                    message="No content to ingest",
-                )
-
-            self.vector_store.add_documents(documents)
-
+        content_hash = self._content_hash(content)
+        dedupe_key = self._dedupe_key(request.echo_id, content_hash)
+        dedupe_set = self.redis.set(
+            dedupe_key,
+            "1",
+            nx=True,
+            ex=DEDUPE_TTL_SECONDS,
+        )
+        if not dedupe_set:
+            logger.info("Duplicate ingest skipped for echo_id=%s", request.echo_id)
             return KnowledgeIngestResponse(
-                status="success",
-                chunks_count=len(documents),
-                message=f"Ingested {len(documents)} chunks",
-            )
-
-        except Exception as e:
-            return KnowledgeIngestResponse(
-                status="error",
+                status="warning",
                 chunks_count=0,
-                message=str(e),
+                message="Duplicate content skipped",
             )
+
+        documents = self.text_splitter.create_documents(
+            texts=[content],
+            metadatas=[
+                {
+                    "user_id": request.user_id,
+                    "echo_id": request.echo_id,
+                    "source": request.source_name,
+                    "content_hash": content_hash,
+                    **(request.metadata or {}),
+                }
+            ],
+        )
+
+        if not documents:
+            raise ValueError("No content to ingest")
+
+        await anyio.to_thread.run_sync(self.vector_store.add_documents, documents)
+
+        return KnowledgeIngestResponse(
+            status="success",
+            chunks_count=len(documents),
+            message=f"Ingested {len(documents)} chunks",
+        )
 
     # --------------------------------------------------------------------------
     async def search(self, query: str, echo_id: str, k: int = 3):
