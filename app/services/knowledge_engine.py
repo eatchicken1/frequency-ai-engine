@@ -81,6 +81,14 @@ class FrequencyDashScopeEmbeddings(Embeddings):
 # ==============================================================================
 # Knowledge Engine
 # ==============================================================================
+def _content_hash(content: str) -> str:
+    return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def _dedupe_key(echo_id: str, content_hash: str) -> str:
+    return f"{DEDUPE_PREFIX}:{echo_id}:{content_hash}"
+
+
 class KnowledgeEngine:
     def __init__(self):
         self.embeddings = FrequencyDashScopeEmbeddings(
@@ -96,12 +104,6 @@ class KnowledgeEngine:
         self.vector_store = None
         self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
 
-    def _content_hash(self, content: str) -> str:
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-    def _dedupe_key(self, echo_id: str, content_hash: str) -> str:
-        return f"{DEDUPE_PREFIX}:{echo_id}:{content_hash}"
-
     def _ensure_vector_store(self) -> None:
         if self.vector_store is not None:
             return
@@ -116,11 +118,6 @@ class KnowledgeEngine:
         )
         self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
 
-    def _content_hash(self, content: str) -> str:
-        return hashlib.sha256(content.encode("utf-8")).hexdigest()
-
-    def _dedupe_key(self, echo_id: str, content_hash: str) -> str:
-        return f"{DEDUPE_PREFIX}:{echo_id}:{content_hash}"
 
     # --------------------------------------------------------------------------
     async def ingest(
@@ -130,8 +127,8 @@ class KnowledgeEngine:
         if not content:
             raise ValueError("content must not be blank")
 
-        content_hash = self._content_hash(content)
-        dedupe_key = self._dedupe_key(request.echo_id, content_hash)
+        content_hash = _content_hash(content)
+        dedupe_key = _dedupe_key(request.echo_id, content_hash)
         dedupe_set = self.redis.set(
             dedupe_key,
             "1",
