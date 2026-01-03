@@ -15,7 +15,9 @@ class Settings(BaseSettings):
 
     # 外部服务地址
     PIG_API_URL: str = "http://localhost:9999"
-    REDIS_URL: str = "redis://localhost:6379/0"
+    MILVUS_HOST: str = "localhost"
+    MILVUS_PORT: int = 19530
+    LOG_LEVEL: str = "INFO"
 
     # AI 模型配置
     OPENAI_API_KEY: str = "sk-a7aa6ef6ca5d4010a23cbfafb48a2978"

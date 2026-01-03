@@ -1,44 +1,46 @@
 import dashscope
 import hashlib
-import logging
-import redis
+import time
 from http import HTTPStatus
 from typing import List
 
 import anyio
 from langchain_core.embeddings import Embeddings
-from langchain_redis import RedisVectorStore
+from langchain_community.vectorstores import Milvus
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+from pymilvus import connections, utility
 
 from app.core.config import settings
+from app.core.logger import logger
 from app.schemas.knowledge import (
     KnowledgeIngestRequest,
     KnowledgeIngestResponse,
 )
 
 # ==============================================================================
-# Redis Vector Config
+# Milvus Vector Config
 # ==============================================================================
-INDEX_NAME = "frequency_knowledge_idx"
-KEY_PREFIX = "frequency:doc"
+COLLECTION_NAME = "frequency_knowledge"
 DEDUPE_PREFIX = "frequency:ingest:dedupe"
 DEDUPE_TTL_SECONDS = 60 * 60 * 24 * 7
 
-logger = logging.getLogger(__name__)
-
-
 # ==============================================================================
-# Redis Vector Capability Check
+# Milvus Connection Check
 # ==============================================================================
-def check_redis_vector_support(redis_url: str):
-    r = redis.from_url(redis_url)
+def check_milvus_connection() -> None:
     try:
-        r.execute_command("FT._LIST")
+        connections.connect(
+            alias="default",
+            host=settings.MILVUS_HOST,
+            port=settings.MILVUS_PORT,
+        )
+        collections = utility.list_collections()
+        logger.info("Milvus connection ok. Collections: {}", collections)
     except Exception as e:
         raise RuntimeError(
-            "\n❌ Redis Vector Search NOT available.\n"
-            "Please use Redis Stack:\n\n"
-            "docker run -d -p 6379:6379 redis/redis-stack-server:latest\n\n"
+            "\n❌ Milvus NOT available.\n"
+            "Please start Milvus:\n\n"
+            "docker run -d -p 19530:19530 -p 9091:9091 milvusdb/milvus:v2.4.0\n\n"
             f"Original error: {e}"
         )
 
@@ -102,46 +104,49 @@ class KnowledgeEngine:
         )
 
         self.vector_store = None
-        self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
+        self._dedupe_cache = {}
 
     def _ensure_vector_store(self) -> None:
         if self.vector_store is not None:
             return
         # ⚠️ 注意：uvicorn --reload 下这里会执行两次
-        check_redis_vector_support(settings.REDIS_URL)
-        # ✅ 关键修复点：embeddings（复数）
-        self.vector_store = RedisVectorStore(
-            redis_url=settings.REDIS_URL,
-            index_name=INDEX_NAME,
-            embeddings=self.embeddings,
-            key_prefix=KEY_PREFIX,
+        check_milvus_connection()
+        logger.info("Initializing Milvus vector store: {}", COLLECTION_NAME)
+        self.vector_store = Milvus(
+            embedding_function=self.embeddings,
+            collection_name=COLLECTION_NAME,
+            connection_args={
+                "host": settings.MILVUS_HOST,
+                "port": settings.MILVUS_PORT,
+            },
         )
-        self.redis = redis.from_url(settings.REDIS_URL, decode_responses=True)
-
 
     # --------------------------------------------------------------------------
     async def ingest(
         self, request: KnowledgeIngestRequest
     ) -> KnowledgeIngestResponse:
+        self._ensure_vector_store()
         content = request.content.strip()
         if not content:
             raise ValueError("content must not be blank")
 
+        now = time.time()
         content_hash = _content_hash(content)
         dedupe_key = _dedupe_key(request.echo_id, content_hash)
-        dedupe_set = self.redis.set(
-            dedupe_key,
-            "1",
-            nx=True,
-            ex=DEDUPE_TTL_SECONDS,
-        )
-        if not dedupe_set:
-            logger.info("Duplicate ingest skipped for echo_id=%s", request.echo_id)
+        expired_keys = [
+            key for key, expires_at in self._dedupe_cache.items()
+            if expires_at <= now
+        ]
+        for key in expired_keys:
+            self._dedupe_cache.pop(key, None)
+        if dedupe_key in self._dedupe_cache:
+            logger.info("Duplicate ingest skipped for echo_id={}", request.echo_id)
             return KnowledgeIngestResponse(
                 status="warning",
                 chunks_count=0,
                 message="Duplicate content skipped",
             )
+        self._dedupe_cache[dedupe_key] = now + DEDUPE_TTL_SECONDS
 
         documents = self.text_splitter.create_documents(
             texts=[content],
@@ -159,6 +164,12 @@ class KnowledgeEngine:
         if not documents:
             raise ValueError("No content to ingest")
 
+        logger.info(
+            "Ingesting knowledge: echo_id={}, user_id={}, chunks={}",
+            request.echo_id,
+            request.user_id,
+            len(documents),
+        )
         await anyio.to_thread.run_sync(self.vector_store.add_documents, documents)
 
         return KnowledgeIngestResponse(
@@ -171,16 +182,22 @@ class KnowledgeEngine:
     async def search(self, query: str, echo_id: str, k: int = 3):
         try:
             self._ensure_vector_store()
-            # [关键] Redis Stack 过滤语法：只检索当前 Echo 的记忆
-            filter_expr = f'@echo_id:{{{echo_id}}}'
+            # [关键] Milvus 过滤语法：只检索当前 Echo 的记忆
+            filter_expr = f"metadata['echo_id'] == '{echo_id}'"
 
+            logger.info(
+                "Searching knowledge: echo_id={}, k={}, query_length={}",
+                echo_id,
+                k,
+                len(query),
+            )
             return self.vector_store.similarity_search(
                 query=query,
                 k=k,
-                filter=filter_expr  # 开启过滤
+                expr=filter_expr
             )
         except Exception as e:
-            print(f"❌ Search error: {e}")
+            logger.exception("Search error: {}", e)
             return []
 
 

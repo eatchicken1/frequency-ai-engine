@@ -1,6 +1,7 @@
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser, JsonOutputParser
 from app.core.llm import get_llm
+from app.core.logger import logger
 import json
 import asyncio
 
@@ -15,7 +16,17 @@ class VibeEngine:
         模拟两个 AI 之间的对话 (逻辑保持不变)
         """
         # --- 第一步：生成动态破冰语 ---
-        print(f"👀 {user_a_profile['name']} 正在查看 {user_b_profile['name']} 的主页，准备搭讪...")
+        logger.info(
+            "Starting conversation simulation: user_a={}, user_b={}, rounds={}",
+            user_a_profile.get("name"),
+            user_b_profile.get("name"),
+            rounds,
+        )
+        logger.info(
+            "👀 {} 正在查看 {} 的主页，准备搭讪...",
+            user_a_profile.get("name"),
+            user_b_profile.get("name"),
+        )
 
         icebreaker_prompt = ChatPromptTemplate.from_template("""
         你是 {name_a}，你的性格是 {style_a}，兴趣是 {interests_a}。
@@ -39,7 +50,7 @@ class VibeEngine:
             "interests_b": user_b_profile['interests']
         })
 
-        print(f"✨ 破冰语生成: {first_message}")
+        logger.info("✨ 破冰语生成: {}", first_message)
 
         # --- 第二步：初始化聊天环境 ---
         chat_system_template = """
@@ -79,7 +90,7 @@ class VibeEngine:
 
         # --- 第三步：循环对话 ---
         for i in range(rounds):
-            print(f"--- Round {i + 1} ---")
+            logger.info("Conversation round {}", i + 1)
 
             history_text = ""
             for log in chat_log:
@@ -87,7 +98,7 @@ class VibeEngine:
                 history_text += f"{speaker_name}: {log['content']}\n"
 
             if current_speaker == "B":
-                print(f"💭 {user_b_profile['name']} (B) 正在思考...")
+                logger.info("💭 {} (B) 正在思考...", user_b_profile.get("name"))
                 response = await chat_chain.ainvoke({
                     "name": user_b_profile['name'],
                     "mbti": user_b_profile['mbti'],
@@ -101,7 +112,7 @@ class VibeEngine:
                 last_msg_content = response
                 current_speaker = "A"
             else:
-                print(f"💭 {user_a_profile['name']} (A) 正在思考...")
+                logger.info("💭 {} (A) 正在思考...", user_a_profile.get("name"))
                 response = await chat_chain.ainvoke({
                     "name": user_a_profile['name'],
                     "mbti": user_a_profile['mbti'],
@@ -149,7 +160,7 @@ class VibeEngine:
         chain_judge = judge_prompt | self.llm | StrOutputParser()
 
         try:
-            print("⚖️ AI 裁判正在撰写分析报告...")
+            logger.info("⚖️ AI 裁判正在撰写分析报告...")
             result_str = await chain_judge.ainvoke({"history": history_text})
 
             # 清洗数据：有时候 LLM 会加 ```json ... ```，需要去掉
@@ -158,7 +169,7 @@ class VibeEngine:
             result_json = json.loads(result_str)
             return result_json
         except Exception as e:
-            print(f"JSON 解析失败，启用兜底逻辑: {e}")
+            logger.exception("JSON 解析失败，启用兜底逻辑: {}", e)
             return {
                 "score": 60,
                 "summary": "AI 裁判看懵了，觉得这俩人深不可测，暂定 60 分吧。"
