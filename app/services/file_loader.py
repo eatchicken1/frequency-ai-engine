@@ -1,5 +1,6 @@
 import anyio
 import alibabacloud_oss_v2 as oss
+import logger
 
 MAX_FILE_SIZE = 20 * 1024 * 1024  # 20MB
 CHUNK_SIZE = 256 * 1024  # 256KB
@@ -15,6 +16,7 @@ def _download_from_oss_sync(
     """
     使用阿里云 OSS 官方 SDK 同步下载（内部函数）
     """
+    logger.info("Downloading from OSS: %s/%s", bucket, object_key)
     # 1️⃣ 凭证（推荐用环境变量）
     credentials_provider = oss.credentials.EnvironmentVariableCredentialsProvider()
 
