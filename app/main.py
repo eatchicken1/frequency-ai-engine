@@ -1,12 +1,14 @@
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
 from app.core.config import settings
-from app.schemas.chat import ChatRequest, ChatResponse
 from app.schemas.knowledge import KnowledgeIngestResponse, KnowledgeIngestRequest
 from app.services.knowledge_engine import knowledge_engine
 from app.services.vibe_engine import VibeEngine
+from pydantic import BaseModel
+from fastapi import HTTPException
+from app.services.knowledge_trainer import train_from_oss
+from app.schemas.KnowledgeTrainRequest import KnowledgeTrainRequest
 
 # 1. 初始化 FastAPI 应用
 app = FastAPI(
@@ -87,6 +89,25 @@ async def ingest_knowledge_endpoint(request: KnowledgeIngestRequest):
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
+
+
+@app.post("/ai/knowledge/train")
+async def train_knowledge(request: KnowledgeTrainRequest):
+    """
+    文档级知识训练接口（业务系统调用）
+    """
+    try:
+        return await train_from_oss(
+            knowledge_id=request.knowledge_id,
+            user_id=request.user_id,
+            echo_id=request.echo_id,
+            file_url=request.file_url,
+            file_type=request.file_type,
+            source_name=request.source_name,
+        )
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 if __name__ == "__main__":
     uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=True)
