@@ -1,5 +1,6 @@
 import dashscope
 import hashlib
+import logging
 import time
 from http import HTTPStatus
 from typing import List
@@ -34,8 +35,7 @@ def check_milvus_connection() -> None:
             host=settings.MILVUS_HOST,
             port=settings.MILVUS_PORT,
         )
-        collections = utility.list_collections()
-        logger.info("Milvus connection ok. Collections: {}", collections)
+        utility.list_collections()
     except Exception as e:
         raise RuntimeError(
             "\n❌ Milvus NOT available.\n"
@@ -111,7 +111,6 @@ class KnowledgeEngine:
             return
         # ⚠️ 注意：uvicorn --reload 下这里会执行两次
         check_milvus_connection()
-        logger.info("Initializing Milvus vector store: {}", COLLECTION_NAME)
         self.vector_store = Milvus(
             embedding_function=self.embeddings,
             collection_name=COLLECTION_NAME,
@@ -140,7 +139,7 @@ class KnowledgeEngine:
         for key in expired_keys:
             self._dedupe_cache.pop(key, None)
         if dedupe_key in self._dedupe_cache:
-            logger.info("Duplicate ingest skipped for echo_id={}", request.echo_id)
+            logger.info("Duplicate ingest skipped for echo_id=%s", request.echo_id)
             return KnowledgeIngestResponse(
                 status="warning",
                 chunks_count=0,
@@ -185,12 +184,6 @@ class KnowledgeEngine:
             # [关键] Milvus 过滤语法：只检索当前 Echo 的记忆
             filter_expr = f"metadata['echo_id'] == '{echo_id}'"
 
-            logger.info(
-                "Searching knowledge: echo_id={}, k={}, query_length={}",
-                echo_id,
-                k,
-                len(query),
-            )
             return self.vector_store.similarity_search(
                 query=query,
                 k=k,
