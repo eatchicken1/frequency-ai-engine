@@ -37,10 +37,12 @@ class VibeCheckRequest(BaseModel):
 
 @app.get("/")
 def read_root():
+    logger.info("Root endpoint called")
     return {"status": "online", "system": "Frequency AI Engine", "vibe": "Resonating"}
 
 @app.get("/health")
 def health_check():
+    logger.info("Health check called")
     return {"status": "UP", "service": settings.PROJECT_NAME}
 
 
@@ -53,7 +55,13 @@ async def start_vibe_check(request: VibeCheckRequest):
     engine = VibeEngine()
 
     try:
-        print(f"🚀 开始同频测试 Session: {request.session_id}")
+        logger.info(
+            "🚀 开始同频测试: session_id={}, rounds={}, user_a={}, user_b={}",
+            request.session_id,
+            request.rounds,
+            request.user_a.get("name"),
+            request.user_b.get("name"),
+        )
 
         # 1. 模拟对话
         dialogue = await engine.simulate_conversation(
@@ -73,21 +81,31 @@ async def start_vibe_check(request: VibeCheckRequest):
         }
 
     except ValueError as e:
+        logger.warning("Vibe check failed with value error: {}", e)
         raise HTTPException(status_code=500, detail=str(e))
     except Exception as e:
-        print(f"Error executing Vibe Check: {e}")
+        logger.exception("Error executing Vibe Check: {}", e)
         raise HTTPException(status_code=500, detail="AI 服务内部错误")
 
 @app.post("/knowledge/add", response_model=KnowledgeIngestResponse)
 async def ingest_knowledge_endpoint(request: KnowledgeIngestRequest):
     """
-    接收数字分身的记忆切片，并存入 Redis 向量数据库
+    接收数字分身的记忆切片，并存入 Milvus 向量数据库
     """
     try:
+        logger.info(
+            "Knowledge ingest request: echo_id={}, user_id={}, source={}, content_length={}",
+            request.echo_id,
+            request.user_id,
+            request.source_name,
+            len(request.content or ""),
+        )
         return await knowledge_engine.ingest(request)
     except ValueError as exc:
+        logger.warning("Knowledge ingest validation error: {}", exc)
         raise HTTPException(status_code=400, detail=str(exc))
     except Exception as exc:
+        logger.exception("Knowledge ingest failed: {}", exc)
         raise HTTPException(status_code=500, detail=str(exc))
 
 
@@ -110,4 +128,5 @@ async def train_knowledge(request: KnowledgeTrainRequest):
 
 
 if __name__ == "__main__":
+    logger.info("Starting Frequency AI Engine on port {}", settings.PORT)
     uvicorn.run("app.main:app", host="0.0.0.0", port=settings.PORT, reload=True)

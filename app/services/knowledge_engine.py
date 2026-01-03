@@ -12,6 +12,7 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from pymilvus import connections, utility
 
 from app.core.config import settings
+from app.core.logger import logger
 from app.schemas.knowledge import (
     KnowledgeIngestRequest,
     KnowledgeIngestResponse,
@@ -23,9 +24,6 @@ from app.schemas.knowledge import (
 COLLECTION_NAME = "frequency_knowledge"
 DEDUPE_PREFIX = "frequency:ingest:dedupe"
 DEDUPE_TTL_SECONDS = 60 * 60 * 24 * 7
-
-logger = logging.getLogger(__name__)
-
 
 # ==============================================================================
 # Milvus Connection Check
@@ -165,6 +163,12 @@ class KnowledgeEngine:
         if not documents:
             raise ValueError("No content to ingest")
 
+        logger.info(
+            "Ingesting knowledge: echo_id={}, user_id={}, chunks={}",
+            request.echo_id,
+            request.user_id,
+            len(documents),
+        )
         await anyio.to_thread.run_sync(self.vector_store.add_documents, documents)
 
         return KnowledgeIngestResponse(
@@ -186,7 +190,7 @@ class KnowledgeEngine:
                 expr=filter_expr
             )
         except Exception as e:
-            print(f"❌ Search error: {e}")
+            logger.exception("Search error: {}", e)
             return []
 
 
