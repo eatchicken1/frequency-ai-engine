@@ -1,6 +1,5 @@
 import dashscope
 import hashlib
-import logging
 import time
 from http import HTTPStatus
 from typing import List
@@ -9,13 +8,14 @@ import anyio
 from langchain_core.embeddings import Embeddings
 from langchain_community.vectorstores import Milvus
 from langchain_text_splitters import RecursiveCharacterTextSplitter
-from pymilvus import connections, utility
+from pymilvus import connections, utility, Collection
 
 from app.core.config import settings
 from app.core.logger import logger
 from app.schemas.knowledge import (
     KnowledgeIngestRequest,
     KnowledgeIngestResponse,
+    KnowledgeDeleteRequest,
 )
 
 # ==============================================================================
@@ -118,6 +118,8 @@ class KnowledgeEngine:
                 "host": settings.MILVUS_HOST,
                 "port": settings.MILVUS_PORT,
             },
+            auto_id=True,  # <--- 【关键修改】开启自动 ID 生成
+            # drop_old=True, # ⚠️ 如果重启后报错 "Schema not match" (Schema不匹配)，请临时取消此行注释，运行一次以重建集合，然后再注释掉
         )
 
     # --------------------------------------------------------------------------
@@ -176,6 +178,33 @@ class KnowledgeEngine:
             chunks_count=len(documents),
             message=f"Ingested {len(documents)} chunks",
         )
+
+    async def delete(self, request: KnowledgeDeleteRequest):
+        self._ensure_vector_store()
+
+        # 构造 Milvus 的过滤表达式 (Expression)
+        # LangChain 通常将元数据存在名为 "metadata" 的 JSON 字段中
+        # 语法: metadata["key"] == value
+        expr = f'metadata["knowledge_id"] == {request.knowledge_id} and metadata["echo_id"] == "{request.echo_id}"'
+
+        logger.info(f"Deleting vectors with expr: {expr}")
+
+        def _sync_delete():
+            # 获取 Collection 对象
+            # 优先尝试从 LangChain 实例获取，如果失败则手动加载
+            if hasattr(self.vector_store, "col") and self.vector_store.col:
+                col = self.vector_store.col
+            else:
+                col = Collection(COLLECTION_NAME)
+
+            # 执行删除 (返回删除的条数在某些版本不准，主要看是否报错)
+            col.delete(expr)
+            return True
+
+        # 放到线程池执行，避免阻塞
+        await anyio.to_thread.run_sync(_sync_delete)
+
+        return {"status": "success", "message": f"Deleted knowledge_id={request.knowledge_id}"}
 
     # --------------------------------------------------------------------------
     async def search(self, query: str, echo_id: str, k: int = 3):

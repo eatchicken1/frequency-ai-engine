@@ -1,9 +1,9 @@
-import logger
+from app.core.logger import logger
 import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.schemas.knowledge import KnowledgeIngestResponse, KnowledgeIngestRequest
+from app.schemas.knowledge import KnowledgeIngestResponse, KnowledgeDeleteRequest
 from app.services.knowledge_engine import knowledge_engine
 from app.services.vibe_engine import VibeEngine
 from pydantic import BaseModel
@@ -88,27 +88,6 @@ async def start_vibe_check(request: VibeCheckRequest):
         logger.exception("Error executing Vibe Check: {}", e)
         raise HTTPException(status_code=500, detail="AI 服务内部错误")
 
-@app.post("/knowledge/add", response_model=KnowledgeIngestResponse)
-async def ingest_knowledge_endpoint(request: KnowledgeIngestRequest):
-    """
-    接收数字分身的记忆切片，并存入 Milvus 向量数据库
-    """
-    try:
-        logger.info(
-            "Knowledge ingest request: echo_id={}, user_id={}, source={}, content_length={}",
-            request.echo_id,
-            request.user_id,
-            request.source_name,
-            len(request.content or ""),
-        )
-        return await knowledge_engine.ingest(request)
-    except ValueError as exc:
-        logger.warning("Knowledge ingest validation error: {}", exc)
-        raise HTTPException(status_code=400, detail=str(exc))
-    except Exception as exc:
-        logger.exception("Knowledge ingest failed: {}", exc)
-        raise HTTPException(status_code=500, detail=str(exc))
-
 
 @app.post("/ai/knowledge/train")
 async def train_knowledge(request: KnowledgeTrainRequest):
@@ -125,6 +104,19 @@ async def train_knowledge(request: KnowledgeTrainRequest):
             source_name=request.source_name,
         )
     except Exception as e:
+        logger.exception("Knowledge train failed: {}", e)
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ai/knowledge/delete")
+async def delete_knowledge_endpoint(request: KnowledgeDeleteRequest):
+    """
+    删除知识库文档对应的向量数据
+    """
+    try:
+        logger.info(f"Delete request: knowledge_id={request.knowledge_id}, echo_id={request.echo_id}")
+        return await knowledge_engine.delete(request)
+    except Exception as e:
+        logger.exception(f"Knowledge delete failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

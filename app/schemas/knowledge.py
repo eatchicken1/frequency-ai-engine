@@ -25,12 +25,14 @@ class KnowledgeIngestRequest(BaseModel):
     metadata: Optional[Dict[str, Any]] = Field(default_factory=dict)
 
     @field_validator("content")
+    @classmethod
     def content_must_not_be_blank(cls, value: str) -> str:
         if not value.strip():
             raise ValueError("content must not be blank")
         return value
 
     @field_validator("metadata", mode="before")
+    @classmethod
     def validate_metadata(cls, value: Optional[Dict[str, Any]]) -> Dict[str, Any]:
         if value is None:
             return {}
@@ -45,3 +47,8 @@ class KnowledgeIngestResponse(BaseModel):
     status: str
     chunks_count: int
     message: str
+
+class KnowledgeDeleteRequest(BaseModel):
+    knowledge_id: int = Field(..., description="业务系统中的知识ID (必须与训练时传入的一致)")
+    echo_id: str = Field(..., description="数字分身ID (安全校验用)")
+    user_id: str = Field(..., description="用户ID (安全校验用)")
