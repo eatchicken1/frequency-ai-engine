@@ -3,7 +3,7 @@ import uvicorn
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
-from app.schemas.knowledge import KnowledgeIngestResponse, KnowledgeDeleteRequest
+from app.schemas.knowledge import KnowledgeIngestResponse, KnowledgeDeleteRequest, BatchKnowledgeDeleteRequest
 from app.services.knowledge_engine import knowledge_engine
 from app.services.vibe_engine import VibeEngine
 from pydantic import BaseModel
@@ -117,6 +117,17 @@ async def delete_knowledge_endpoint(request: KnowledgeDeleteRequest):
         return await knowledge_engine.delete(request)
     except Exception as e:
         logger.exception(f"Knowledge delete failed: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/ai/knowledge/batch-delete")
+async def batch_delete_knowledge_endpoint(request: BatchKnowledgeDeleteRequest):
+    """
+    批量删除知识库向量数据 (高性能)
+    """
+    try:
+        return await knowledge_engine.batch_delete(request)
+    except Exception as e:
+        logger.exception(f"Batch delete failed: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

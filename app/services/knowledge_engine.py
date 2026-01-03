@@ -16,6 +16,7 @@ from app.schemas.knowledge import (
     KnowledgeIngestRequest,
     KnowledgeIngestResponse,
     KnowledgeDeleteRequest,
+    BatchKnowledgeDeleteRequest
 )
 
 # ==============================================================================
@@ -205,6 +206,38 @@ class KnowledgeEngine:
         await anyio.to_thread.run_sync(_sync_delete)
 
         return {"status": "success", "message": f"Deleted knowledge_id={request.knowledge_id}"}
+
+    async def batch_delete(self, request: BatchKnowledgeDeleteRequest):
+        if not request.items:
+            return {"status": "skipped", "message": "Empty list"}
+
+        self._ensure_vector_store()
+
+        # 1. 提取所有 ID
+        # 假设一次批量操作通常是同一个 user/echo 下的（虽然代码允许不同，但性能优化建议同租户）
+        # 这里我们收集所有的 knowledge_id
+        knowledge_ids = [item.knowledge_id for item in request.items]
+
+        # 2. 构造 Milvus 批量删除表达式
+        # 语法: metadata["knowledge_id"] in [123, 456, 789]
+        ids_str = ", ".join(map(str, knowledge_ids))
+        expr = f'metadata["knowledge_id"] in [{ids_str}]'
+
+        logger.info(f"Batch deleting vectors with expr: {expr}")
+
+        def _sync_delete():
+            if hasattr(self.vector_store, "col") and self.vector_store.col:
+                col = self.vector_store.col
+            else:
+                col = Collection(COLLECTION_NAME)
+
+            # 执行一次性删除
+            col.delete(expr)
+            return True
+
+        await anyio.to_thread.run_sync(_sync_delete)
+
+        return {"status": "success", "message": f"Deleted {len(knowledge_ids)} items"}
 
     # --------------------------------------------------------------------------
     async def search(self, query: str, echo_id: str, k: int = 3):

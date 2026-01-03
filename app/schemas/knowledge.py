@@ -1,5 +1,5 @@
 import json
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -52,3 +52,7 @@ class KnowledgeDeleteRequest(BaseModel):
     knowledge_id: int = Field(..., description="业务系统中的知识ID (必须与训练时传入的一致)")
     echo_id: str = Field(..., description="数字分身ID (安全校验用)")
     user_id: str = Field(..., description="用户ID (安全校验用)")
+
+class BatchKnowledgeDeleteRequest(BaseModel):
+    # 接收一个列表
+    items: List[KnowledgeDeleteRequest]
