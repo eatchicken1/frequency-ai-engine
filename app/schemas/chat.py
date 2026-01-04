@@ -1,15 +1,11 @@
 from pydantic import BaseModel, Field
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any,List, Optional
 
 class ChatRequest(BaseModel):
-    """
-    请求参数模型 (对应 Java 发送的 JSON)
-    """
-    session_id: str = Field(..., description="会话唯一标识")
-    user_message: str = Field(..., description="用户发送的消息")
-    echo_id: Optional[int] = Field(None, description="目标 Echo ID")
-    # 用于 RAG 或个性化上下文的用户画像数据
-    user_profile: Optional[Dict[str, Any]] = Field(None, description="用户画像数据")
+    user_id: str = Field(..., description="用户ID")
+    echo_id: str = Field(..., description="数字分身ID")
+    query: str = Field(..., description="用户提问")
+    history: Optional[List[dict]] = Field(default=[], description="历史对话记录 [{'role': 'user', 'content': '...'}, ...]")
 
 class ChatResponse(BaseModel):
     """

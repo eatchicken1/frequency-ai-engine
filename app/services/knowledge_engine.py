@@ -3,7 +3,7 @@ import hashlib
 import time
 from http import HTTPStatus
 from typing import List
-
+import functools
 import anyio
 from langchain_core.embeddings import Embeddings
 from langchain_community.vectorstores import Milvus
@@ -183,26 +183,21 @@ class KnowledgeEngine:
     async def delete(self, request: KnowledgeDeleteRequest):
         self._ensure_vector_store()
 
-        # 构造 Milvus 的过滤表达式 (Expression)
-        # LangChain 通常将元数据存在名为 "metadata" 的 JSON 字段中
-        # 语法: metadata["key"] == value
-        expr = f'metadata["knowledge_id"] == {request.knowledge_id} and metadata["echo_id"] == "{request.echo_id}"'
+        # [修改点]: 直接使用 knowledge_id 和 echo_id 字段
+        # 注意：knowledge_id 是 int 类型，不需要引号；echo_id 是 string，需要引号
+        expr = f'knowledge_id == {request.knowledge_id} and echo_id == "{request.echo_id}"'
 
         logger.info(f"Deleting vectors with expr: {expr}")
 
         def _sync_delete():
-            # 获取 Collection 对象
-            # 优先尝试从 LangChain 实例获取，如果失败则手动加载
             if hasattr(self.vector_store, "col") and self.vector_store.col:
                 col = self.vector_store.col
             else:
                 col = Collection(COLLECTION_NAME)
 
-            # 执行删除 (返回删除的条数在某些版本不准，主要看是否报错)
             col.delete(expr)
             return True
 
-        # 放到线程池执行，避免阻塞
         await anyio.to_thread.run_sync(_sync_delete)
 
         return {"status": "success", "message": f"Deleted knowledge_id={request.knowledge_id}"}
@@ -213,15 +208,11 @@ class KnowledgeEngine:
 
         self._ensure_vector_store()
 
-        # 1. 提取所有 ID
-        # 假设一次批量操作通常是同一个 user/echo 下的（虽然代码允许不同，但性能优化建议同租户）
-        # 这里我们收集所有的 knowledge_id
         knowledge_ids = [item.knowledge_id for item in request.items]
-
-        # 2. 构造 Milvus 批量删除表达式
-        # 语法: metadata["knowledge_id"] in [123, 456, 789]
         ids_str = ", ".join(map(str, knowledge_ids))
-        expr = f'metadata["knowledge_id"] in [{ids_str}]'
+
+        # [修改点]: 直接使用 knowledge_id 字段
+        expr = f'knowledge_id in [{ids_str}]'
 
         logger.info(f"Batch deleting vectors with expr: {expr}")
 
@@ -231,7 +222,6 @@ class KnowledgeEngine:
             else:
                 col = Collection(COLLECTION_NAME)
 
-            # 执行一次性删除
             col.delete(expr)
             return True
 
@@ -240,20 +230,22 @@ class KnowledgeEngine:
         return {"status": "success", "message": f"Deleted {len(knowledge_ids)} items"}
 
     # --------------------------------------------------------------------------
-    async def search(self, query: str, echo_id: str, k: int = 3):
-        try:
-            self._ensure_vector_store()
-            # [关键] Milvus 过滤语法：只检索当前 Echo 的记忆
-            filter_expr = f"metadata['echo_id'] == '{echo_id}'"
 
-            return self.vector_store.similarity_search(
-                query=query,
-                k=k,
-                expr=filter_expr
-            )
-        except Exception as e:
-            logger.exception("Search error: {}", e)
-            return []
+    async def search(self, query: str, echo_id: str, limit: int = 5):
+        self._ensure_vector_store()
+
+        # [修改点]: 字段不再带 metadata["..."]，直接使用字段名
+        filter_expr = f'echo_id == "{echo_id}"'
+
+        func = functools.partial(
+            self.vector_store.similarity_search,
+            query,
+            k=limit,
+            expr=filter_expr
+        )
+
+        docs = await anyio.to_thread.run_sync(func)
+        return docs
 
 
 knowledge_engine = KnowledgeEngine()

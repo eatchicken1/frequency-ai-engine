@@ -10,6 +10,9 @@ from pydantic import BaseModel
 from fastapi import HTTPException
 from app.services.knowledge_trainer import train_from_oss
 from app.schemas.KnowledgeTrainRequest import KnowledgeTrainRequest
+from fastapi.responses import StreamingResponse
+from app.schemas.chat import ChatRequest
+from app.services.chat_service import chat_stream_generator
 
 # 1. 初始化 FastAPI 应用
 app = FastAPI(
@@ -46,6 +49,15 @@ def health_check():
     logger.info("Health check called")
     return {"status": "UP", "service": settings.PROJECT_NAME}
 
+@app.post("/ai/chat/stream")
+async def chat_stream_endpoint(request: ChatRequest):
+    """
+    流式对话接口 (SSE 风格数据流)
+    """
+    return StreamingResponse(
+        chat_stream_generator(request),
+        media_type="text/event-stream"
+    )
 
 # --- 核心接口 ---
 @app.post(f"{settings.API_V1_STR}/ai/vibe-check")
