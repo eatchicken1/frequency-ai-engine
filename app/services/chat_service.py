@@ -1,5 +1,5 @@
-from typing import List  # <--- 1. 新增导入
-from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage  # <--- 2. 新增 BaseMessage
+from typing import List, AsyncGenerator
+from langchain_core.messages import SystemMessage, HumanMessage, AIMessage, BaseMessage
 from langchain_openai import ChatOpenAI
 from app.core.config import settings
 from app.core.logger import logger
@@ -13,36 +13,40 @@ async def chat_stream_generator(request: ChatRequest):
     """
     try:
         # 1. 检索相关知识 (RAG)
-        docs = await knowledge_engine.search(request.query, request.echo_id, limit=3)
+        docs = await knowledge_engine.search(request.query, request.echo_id, limit=10)
         context_text = "\n\n".join([doc.page_content for doc in docs])
 
         logger.info(f"Retrieved {len(docs)} docs for echo_id={request.echo_id}")
 
-        # 2. 构建 Prompt
-        system_prompt = f"""
-        你是一个数字分身。请基于以下[参考知识]回答用户的问题。
-        如果参考知识中没有答案，请根据你的常识回答，但要保持语气符合人设。
+        system_template = f"""
+        你现在的身份是：【{request.echo_nickname}】
+        你的核心人设：{request.echo_prompt}
+        你的语言风格：{request.echo_tone}
+        你擅长的领域：{request.echo_tags}
 
-        [参考知识]:
+        请严格遵守以下规则进行对话：
+        1. **沉浸式扮演**：你就是{request.echo_nickname}本人的数字分身Echo，不是AI助手。不要暴露你是程序或模型。
+        2. **拒绝重复介绍**：除非用户明确询问“你是谁”，否则**绝对不要**在每句话开头重复你的名字、身份或人设背景。
+        3. **风格一致性**：请始终保持“{request.echo_tone}”的语气。
+        4. **上下文理解**：历史记录仅供参考，不要重复回答历史记录中已经回答过的问题。只针对用户最新发送的一句话进行回复。
+        5. **知识引用**：如果需要，可以参考以下背景知识（结合你的人设用口语表达出来）：
         {context_text}
         """
 
-        # [核心修改]: 显式声明列表类型为 List[BaseMessage]，解决类型推断错误
-        messages: List[BaseMessage] = [SystemMessage(content=system_prompt)]
+        messages: List[BaseMessage] = [SystemMessage(content=system_template)]
 
-        # 确保 history 不为 None
-        history = request.history or []
+        # History Messages (处理历史，防止复读)
+        if request.history:
+            for msg in request.history[-20:]:  # 取最近20条
+                if msg.role == 'user':
+                    messages.append(HumanMessage(content=msg.content))
+                elif msg.role in ['assistant', 'ai']:
+                    messages.append(AIMessage(content=msg.content))
 
-        # 添加历史记录
-        for msg in history[-4:]:
-            role = msg.get('role')
-            content = msg.get('content', '')
-            if role == 'user':
-                messages.append(HumanMessage(content=content))
-            elif role in ['assistant', 'ai']:
-                messages.append(AIMessage(content=content))
-
+        # Current User Query
         messages.append(HumanMessage(content=request.query))
+
+        logger.info(f"Chat Request: echo={request.echo_nickname}, prompt_len={len(system_template)}")
 
         # 3. 初始化 LLM
         llm = ChatOpenAI(

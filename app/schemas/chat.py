@@ -1,11 +1,19 @@
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any,List, Optional
 
+class Message(BaseModel):
+    role: str
+    content: str
+
 class ChatRequest(BaseModel):
     user_id: str = Field(..., description="用户ID")
     echo_id: str = Field(..., description="数字分身ID")
     query: str = Field(..., description="用户提问")
-    history: Optional[List[dict]] = Field(default=[], description="历史对话记录 [{'role': 'user', 'content': '...'}, ...]")
+    history: Optional[List[Message]] = Field(None, description="历史记录")
+    echo_nickname: Optional[str] = "数字分身"
+    echo_prompt: Optional[str] = ""  # 对应 personalityPrompt
+    echo_tone: Optional[str] = ""  # 对应 voiceTone
+    echo_tags: Optional[str] = ""  # 对应 tags
 
 class ChatResponse(BaseModel):
     """
