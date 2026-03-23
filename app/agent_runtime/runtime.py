@@ -6,7 +6,7 @@ from app.agent_runtime.workflows.research_workflow import ResearchWorkflow
 class AgentRuntime:
     """
     负责管理 Python 侧的重型 agent workflow。
-    这里先只做注册与分发，不影响现有 HTTP 接口。
+    Java 侧只调用这里暴露的 workflow-only HTTP 接口。
     """
 
     def __init__(self) -> None:

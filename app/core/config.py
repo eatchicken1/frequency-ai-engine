@@ -6,7 +6,7 @@ class Settings(BaseSettings):
     系统配置加载类
     自动读取环境变量或 .env 文件
     """
-    PROJECT_NAME: str = "Frequency AI Engine"
+    PROJECT_NAME: str = "Frequency Agent Runtime"
     API_V1_STR: str = "/api/v1"
 
     # 基础配置
