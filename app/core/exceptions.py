@@ -1,0 +1,2 @@
+class RuntimeAuthError(Exception):
+    pass

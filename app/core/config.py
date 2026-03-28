@@ -28,6 +28,22 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "sk-..."
     OPENAI_API_BASE: str = "https://dashscope.aliyuncs.com/compatible-mode/v1"
 
+    # --- Runtime 服务间鉴权配置 ---
+    # Java(pig-ai-agent) 与 Python runtime 间共享密钥（HMAC-SHA256）
+    RUNTIME_SHARED_SECRET: str = ""
+    # 允许调用 runtime 的 client_id 白名单，逗号分隔
+    RUNTIME_ALLOWED_CLIENTS: str = "pig-ai-agent"
+    # 签名时间窗（秒）
+    RUNTIME_CLOCK_SKEW_SECONDS: int = 120
+    # 仅开发调试时可开启，允许缺少签名
+    RUNTIME_ALLOW_INSECURE: bool = False
+    # nonce 防重放存储（redis / memory）
+    RUNTIME_NONCE_STORE: str = "redis"
+    # nonce redis key 前缀
+    RUNTIME_NONCE_REDIS_PREFIX: str = "freq:runtime:nonce:"
+    # Redis URL（建议通过环境变量注入）
+    REDIS_URL: str = "redis://localhost:6379/0"
+
     class Config:
         env_file = ".env"
         case_sensitive = True

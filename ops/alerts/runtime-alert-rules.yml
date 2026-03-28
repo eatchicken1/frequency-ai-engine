@@ -1,0 +1,40 @@
+﻿groups:
+  - name: frequency-runtime-alerts
+    rules:
+      - alert: FrequencyRuntimeAuthRejectSpike
+        expr: sum(increase(frequency_runtime_auth_attempts_total{result="rejected"}[5m])) > 20
+        for: 5m
+        labels:
+          severity: warning
+          service: frequency-ai-engine
+        annotations:
+          summary: "Runtime 鉴权拒绝激增"
+          description: "5 分钟内 runtime 鉴权拒绝次数超过 20，需排查签名、来源和时钟偏移。"
+
+      - alert: FrequencyRuntimeWorkflowErrorRateHigh
+        expr: |
+          (
+            sum(increase(frequency_runtime_workflow_runs_total{result=~"error|bad_request|forbidden"}[10m]))
+            /
+            clamp_min(sum(increase(frequency_runtime_workflow_runs_total[10m])), 1)
+          ) > 0.05
+        for: 10m
+        labels:
+          severity: critical
+          service: frequency-ai-engine
+        annotations:
+          summary: "Runtime workflow 错误率过高"
+          description: "10 分钟窗口内 workflow 错误/拒绝占比超过 5%。"
+
+      - alert: FrequencyRuntimeWorkflowP95High
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(frequency_runtime_workflow_duration_seconds_bucket[10m])) by (le, workflow)
+          ) > 3
+        for: 10m
+        labels:
+          severity: warning
+          service: frequency-ai-engine
+        annotations:
+          summary: "Runtime workflow P95 延迟过高"
+          description: "workflow={{ $labels.workflow }} 的 P95 延迟超过 3 秒。"
